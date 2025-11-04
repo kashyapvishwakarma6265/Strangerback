@@ -1,0 +1,32 @@
+{
+  "name": "socketio-backend",
+  "version": "1.0.0",
+  "description": "Random chat backend using Express and Socket.IO",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "babel . --out-dir dist --ignore node_modules,dist",
+    "start": "node dist/server.js",
+    "dev": "nodemon server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "express",
+    "socket.io",
+    "backend",
+    "chat"
+  ],
+  "author": "K",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.28.3",
+    "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.28.5",
+    "nodemon": "^3.1.10"
+  }
+}
