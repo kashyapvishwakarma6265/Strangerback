@@ -7,35 +7,34 @@ const cors = require('cors');
 require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
-
-// Configure CORS for Socket.IO
-const io = new Server(server, {
-  cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:3000",
-    methods: ["GET", "POST"],
-    credentials: true
-  }
-});
-
-// Enable CORS for Express
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  origin: FRONTEND_URL,
   credentials: true
 }));
+const io = new Server(server, {
+  cors: {
+    origin: FRONTEND_URL,
+    methods: ["GET", "POST"],
+    credentials: true
+  },
+  // Key Fix: Allow large video/audio blobs!
+  maxHttpBufferSize: 100 * 1024 * 1024 // 100 MB
+});
+
+// Health check endpoint
 app.get('/', (req, res) => {
   res.json({
     message: 'Socket.IO server is running'
   });
 });
 
-// Store waiting users and room mappings
+// State: waiting queue and room mappings
 let waitingUsers = [];
 let rooms = {};
 let activeRooms = {};
 io.on('connection', socket => {
   console.log(`User connected: ${socket.id}`);
-
-  // Function to pair users
   function pairUsers() {
     if (waitingUsers.length >= 2) {
       const user1 = waitingUsers.shift();
@@ -50,32 +49,30 @@ io.on('connection', socket => {
         socket1.join(roomName);
         socket2.join(roomName);
         io.to(roomName).emit('paired', {
-          message: 'You are now connected with a stranger!'
+          message: 'You are now connected with a stranger!',
+          roomId: roomName
         });
         console.log(`Paired: ${user1} and ${user2}`);
       }
     }
   }
-
-  // Add user to waiting queue
   waitingUsers.push(socket.id);
   socket.emit('waiting', {
     message: 'Looking for a stranger...'
   });
   pairUsers();
 
-  // Handle messages
+  // Relay userName and all data from frontend to paired stranger
   socket.on('chat message', data => {
     const roomName = rooms[socket.id];
     if (roomName) {
+      console.log(`[chat] Relaying message from ${socket.id} -> room ${roomName}, type: ${data.type}, size: ${data.mediaUrl ? data.mediaUrl.length : 0} bytes`);
       socket.to(roomName).emit('chat message', {
-        message: data.message,
+        ...data,
         sender: 'stranger'
       });
     }
   });
-
-  // Handle typing
   socket.on('typing', data => {
     const roomName = rooms[socket.id];
     if (roomName) {
@@ -84,8 +81,6 @@ io.on('connection', socket => {
       });
     }
   });
-
-  // Handle find next
   socket.on('find next', () => {
     const roomName = rooms[socket.id];
     if (roomName) {
@@ -106,8 +101,6 @@ io.on('connection', socket => {
     });
     pairUsers();
   });
-
-  // Handle disconnect
   socket.on('disconnect', () => {
     console.log(`User disconnected: ${socket.id}`);
     const roomName = rooms[socket.id];
