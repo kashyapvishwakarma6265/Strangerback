@@ -7,14 +7,9 @@ const cors = require('cors');
 require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
-
-// Allow both deployed Vercel frontend and local dev
 const allowedOrigins = ["https://stranger-xi.vercel.app"];
-
-// CORS middleware for HTTP requests
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
       return callback(new Error('CORS Policy violation'), false);
@@ -23,30 +18,23 @@ app.use(cors({
   },
   credentials: true
 }));
-
-// Socket.IO CORS
 const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
     credentials: true
   },
-  maxHttpBufferSize: 100 * 1024 * 1024 // 100 MB for large media
+  maxHttpBufferSize: 100 * 1024 * 1024
 });
-
-// Health check
 app.get('/', (req, res) => {
   res.json({
     message: 'Socket.IO server is running'
   });
 });
-
-// Chat pairing state
 let waitingUsers = [];
 let rooms = {};
 let activeRooms = {};
 io.on('connection', socket => {
-  console.log(`User connected: ${socket.id}`);
   function pairUsers() {
     if (waitingUsers.length >= 2) {
       const user1 = waitingUsers.shift();
@@ -64,7 +52,6 @@ io.on('connection', socket => {
           message: 'You are now connected with a stranger!',
           roomId: roomName
         });
-        console.log(`Paired: ${user1} and ${user2}`);
       }
     }
   }
@@ -76,20 +63,44 @@ io.on('connection', socket => {
   socket.on('chat message', data => {
     const roomName = rooms[socket.id];
     if (roomName) {
-      console.log(`[chat] Relaying message from ${socket.id} -> room ${roomName}, type: ${data.type}, size: ${data.mediaUrl ? data.mediaUrl.length : 0} bytes`);
+      // Attach unique id if not present
+      if (!data.id) data.id = Date.now().toString() + Math.random().toString(36).slice(2);
+
+      // Tell sender it's sent
+      socket.emit('message status', {
+        id: data.id,
+        status: 'sent'
+      });
+
+      // Relay message to receiver
       socket.to(roomName).emit('chat message', {
         ...data,
         sender: 'stranger'
+      });
+
+      // Tell sender delivered (right after relaying)
+      socket.emit('message status', {
+        id: data.id,
+        status: 'delivered'
+      });
+    }
+  });
+
+  // Seen/read status: when receiver opens a message, call this
+  socket.on('message seen', data => {
+    const roomName = rooms[socket.id];
+    if (roomName && data?.id) {
+      socket.to(roomName).emit('message status', {
+        id: data.id,
+        status: 'seen'
       });
     }
   });
   socket.on('typing', data => {
     const roomName = rooms[socket.id];
-    if (roomName) {
-      socket.to(roomName).emit('typing', {
-        isTyping: data.isTyping
-      });
-    }
+    if (roomName) socket.to(roomName).emit('typing', {
+      isTyping: data.isTyping
+    });
   });
   socket.on('find next', () => {
     const roomName = rooms[socket.id];
@@ -112,7 +123,6 @@ io.on('connection', socket => {
     pairUsers();
   });
   socket.on('disconnect', () => {
-    console.log(`User disconnected: ${socket.id}`);
     const roomName = rooms[socket.id];
     if (roomName) {
       socket.to(roomName).emit('stranger left', {
