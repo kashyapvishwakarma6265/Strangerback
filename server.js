@@ -7,19 +7,23 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+// 👇 Replace these with your real domains as needed
+const ALLOWED_ORIGINS = [
+    "https://stranger-xi.vercel.app",
+    "http://localhost:3000"
+];
+
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin: ALLOWED_ORIGINS,
   credentials: true,
 }));
 
 const io = new Server(server, {
   cors: {
-    origin: FRONTEND_URL,
+    origin: ALLOWED_ORIGINS,
     methods: ["GET", "POST"],
-    credentials: true
+    credentials: true,
   },
-  // Key Fix: Allow large video/audio blobs!
   maxHttpBufferSize: 100 * 1024 * 1024 // 100 MB
 });
 
@@ -28,7 +32,6 @@ app.get('/', (req, res) => {
   res.json({ message: 'Socket.IO server is running' });
 });
 
-// State: waiting queue and room mappings
 let waitingUsers = [];
 let rooms = {};
 let activeRooms = {};
@@ -61,7 +64,6 @@ io.on('connection', (socket) => {
   socket.emit('waiting', { message: 'Looking for a stranger...' });
   pairUsers();
 
-  // Relay userName and all data from frontend to paired stranger
   socket.on('chat message', (data) => {
     const roomName = rooms[socket.id];
     if (roomName) {
