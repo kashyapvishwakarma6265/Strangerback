@@ -7,31 +7,41 @@ require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
 
-// 👇 Replace these with your real domains as needed
-const ALLOWED_ORIGINS = [
-    "https://stranger-xi.vercel.app",
-    "http://localhost:3000"
+// Allow both deployed Vercel frontend and local dev
+const allowedOrigins = [
+  "https://stranger-xi.vercel.app",
+  
 ];
 
+// CORS middleware for HTTP requests
 app.use(cors({
-  origin: ALLOWED_ORIGINS,
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      return callback(new Error('CORS Policy violation'), false);
+    }
+    return callback(null, true);
+  },
   credentials: true,
 }));
 
+// Socket.IO CORS
 const io = new Server(server, {
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: allowedOrigins,
     methods: ["GET", "POST"],
-    credentials: true,
+    credentials: true
   },
-  maxHttpBufferSize: 100 * 1024 * 1024 // 100 MB
+  maxHttpBufferSize: 100 * 1024 * 1024 // 100 MB for large media
 });
 
-// Health check endpoint
+// Health check
 app.get('/', (req, res) => {
   res.json({ message: 'Socket.IO server is running' });
 });
 
+// Chat pairing state
 let waitingUsers = [];
 let rooms = {};
 let activeRooms = {};
