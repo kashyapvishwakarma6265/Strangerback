@@ -7,7 +7,9 @@ const cors = require('cors');
 require('dotenv').config();
 const app = express();
 const server = http.createServer(app);
-const allowedOrigins = ["https://stranger-xi.vercel.app"];
+const allowedOrigins = ["https://stranger-xi.vercel.app"
+// Add for development
+];
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
@@ -24,7 +26,9 @@ const io = new Server(server, {
     methods: ["GET", "POST"],
     credentials: true
   },
-  maxHttpBufferSize: 100 * 1024 * 1024
+  maxHttpBufferSize: 100 * 1024 * 1024,
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 app.get('/', (req, res) => {
   res.json({
@@ -34,8 +38,7 @@ app.get('/', (req, res) => {
 let waitingUsers = [];
 let rooms = {};
 let activeRooms = {};
-let userInfo = {}; // Store user information
-
+let userInfo = {};
 io.on('connection', socket => {
   console.log('User connected:', socket.id);
 
@@ -107,7 +110,6 @@ io.on('connection', socket => {
   });
 
   // ============== WEBRTC CALL SIGNALING ==============
-
   // Call initiation
   socket.on('call:initiate', ({
     callType
@@ -137,9 +139,11 @@ io.on('connection', socket => {
     to
   }) => {
     console.log(`${socket.id} rejected call from ${to}`);
-    io.to(to).emit('call:rejected', {
-      from: socket.id
-    });
+    if (to) {
+      io.to(to).emit('call:rejected', {
+        from: socket.id
+      });
+    }
   });
 
   // Call ended
@@ -171,18 +175,20 @@ io.on('connection', socket => {
     to
   }) => {
     console.log(`${socket.id} sending answer to ${to}`);
-    io.to(to).emit('webrtc:answer', {
-      answer,
-      from: socket.id
-    });
+    if (to) {
+      io.to(to).emit('webrtc:answer', {
+        answer,
+        from: socket.id
+      });
+    }
   });
 
-  // ICE Candidate
+  // ICE Candidate - FIXED: Ensure proper forwarding
   socket.on('webrtc:ice-candidate', ({
     candidate
   }) => {
     const roomName = rooms[socket.id];
-    if (roomName) {
+    if (roomName && candidate) {
       console.log(`${socket.id} sending ICE candidate in ${roomName}`);
       socket.to(roomName).emit('webrtc:ice-candidate', {
         candidate,
@@ -191,8 +197,22 @@ io.on('connection', socket => {
     }
   });
 
-  // ============== ROOM MANAGEMENT ==============
+  // Track enable/disable events
+  socket.on('track:toggle', ({
+    trackType,
+    enabled
+  }) => {
+    const roomName = rooms[socket.id];
+    if (roomName) {
+      socket.to(roomName).emit('track:toggle', {
+        trackType,
+        enabled,
+        from: socket.id
+      });
+    }
+  });
 
+  // ============== ROOM MANAGEMENT ==============
   socket.on('find next', () => {
     const roomName = rooms[socket.id];
     if (roomName) {
@@ -220,8 +240,13 @@ io.on('connection', socket => {
       socket.to(roomName).emit('stranger left', {
         message: 'Stranger has disconnected.'
       });
-      delete rooms[socket.id];
-      delete activeRooms[roomName];
+      const roomUsers = activeRooms[roomName];
+      if (roomUsers) {
+        roomUsers.forEach(userId => {
+          delete rooms[userId];
+        });
+        delete activeRooms[roomName];
+      }
     }
     waitingUsers = waitingUsers.filter(id => id !== socket.id);
     delete userInfo[socket.id];
